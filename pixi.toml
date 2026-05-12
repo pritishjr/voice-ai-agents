@@ -1,0 +1,17 @@
+[workspace]
+authors = ["pritishjr <pritishjr.personal@gmail.com>"]
+channels = ["conda-forge"]
+name = "voice_ai_agents"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = ">=3.10"
+aiortc = ">=1.14.0,<2"
+
+[pypi-dependencies]
+aiortc = "*"
+asyncio = ">=4.0.0, <5"
+datetime = ">=6.0, <7"
