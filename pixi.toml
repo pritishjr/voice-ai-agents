@@ -16,7 +16,7 @@ python-dotenv = ">=1.2.2,<2"
 aiortc = "*"
 asyncio = ">=4.0.0, <5"
 datetime = ">=6.0, <7"
-livekit-agents = ">=1.5.9, <2"
+livekit-agents = { version = ">=1.5.9, <2", extras = ["turn-detector"] }
 livekit-plugins-noise-cancellation = ">=0.2.5, <0.3"
 dotenv = ">=0.9.9, <0.10"
 livekit-plugins-silero = ">=1.5.9, <2"
