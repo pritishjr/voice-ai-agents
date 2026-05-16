@@ -9,6 +9,9 @@ from livekit import agents
 from livekit.agents import JobContext, room_io, Agent, AgentServer, AgentSession
 from livekit.plugins import silero, noise_cancellation
 
+#semantic turn detection (multilingual): to reduce unwanted interruptions
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
+
 #loading the apis
 load_dotenv()
 
@@ -33,7 +36,8 @@ async def entrypoint(ctx: JobContext):
         stt = "assemblyai/universal-streaming:en",
         llm = "openai/gpt-4.1-mini",
         tts = "cartesia/sonic-3",
-        vad = silero.VAD.load()
+        vad = silero.VAD.load(),
+        turn_detection= MultilingualModel() #turn detection (multilingual)
     )
     
     #starting the session with noise_cancellation enabled.
