@@ -8,10 +8,17 @@ version = "0.1.0"
 [tasks]
 
 [dependencies]
-python = ">=3.10"
+python = "3.12.*"
 aiortc = ">=1.14.0,<2"
+python-dotenv = ">=1.2.2,<2"
 
 [pypi-dependencies]
 aiortc = "*"
 asyncio = ">=4.0.0, <5"
 datetime = ">=6.0, <7"
+livekit-agents = ">=1.5.9, <2"
+livekit-plugins-noise-cancellation = ">=0.2.5, <0.3"
+dotenv = ">=0.9.9, <0.10"
+livekit-plugins-silero = ">=1.5.9, <2"
+livekit-plugins-turn-detector = ">=1.5.9, <2"
+livekit = ">=1.1.8, <2"
