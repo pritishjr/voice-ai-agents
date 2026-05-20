@@ -3,6 +3,7 @@ This is from the LiveKit tutorials on the basics of building voice ai agents.
 '''
 
 import logging
+import time 
 from dotenv import load_dotenv
 
 from livekit import agents
@@ -14,6 +15,12 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 #adding fallback adapters: secondary providers that prevent performance during model outages.
 from livekit.agents import tts, llm, stt, inference
+
+#calculating metrics:
+from livekit.agents import AgentStateChangedEvent, MetricsCollectedEvent, metrics
+
+#defining logger to track metrics for performance eval
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -72,8 +79,40 @@ async def entrypoint(ctx: JobContext):
             ]
         ),
         vad = vad,
-        turn_detection = MultilingualModel()
+        turn_detection = MultilingualModel(),
+        preemptive_generation= True #enables the llm to think while the user is speaking.
     )
+    
+    '''
+    Collecting metrics before the session start: EVENT HANDLER
+    - usage collector: aggregates data across all conversation turns (token counts: LLM, audio durations: STT and TTS, cost estimates)
+    - 
+    '''
+    #aggregating data across all turns(over all responses):
+    usage_collector = metrics.UsageCollector()
+    #calculate metrics at end of utterance timing: whenever the turn-detection gets activated - called EOU
+    last_eou_metric = metrics.EOUMetrics() | None = None
+    
+    #fires after each component finishes processing:
+    @session.on("metrics_collected") #collecting the aggregated metrics
+    def _on_metrics_collected(event: MetricsCollectedEvent):
+        
+        nonlocal last_eou_metric
+        if event.metrics == "eou_metrics":
+            last_eou_metric = event.metrics
+        
+        #logging each metric:
+        metrics.log_metrics(event.metrics)
+        usage_collector.collect(event.metrics) #aggregating
+    
+    async def log_usage(): #logging the per-session summary of metrics
+        
+        summary = usage_collector.get_summary()
+        logger.info("Usage summary: %s", summary)
+        
+    # Fire log_usage when worker shuts down
+    ctx.add_shutdown_callback(log_usage)
+    
     
     #starting the session with noise_cancellation enabled.
     await session.start(
