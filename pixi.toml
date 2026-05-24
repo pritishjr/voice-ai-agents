@@ -11,6 +11,7 @@ version = "0.1.0"
 python = "3.12.*"
 aiortc = ">=1.14.0,<2"
 python-dotenv = ">=1.2.2,<2"
+httpx = ">=0.28.1,<0.29"
 
 [pypi-dependencies]
 aiortc = "*"
