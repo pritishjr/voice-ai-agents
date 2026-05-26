@@ -19,6 +19,14 @@ from livekit.agents import tts, llm, stt, inference
 #calculating metrics:
 from livekit.agents import AgentStateChangedEvent, MetricsCollectedEvent, metrics
 
+#tools and MCP integration
+import httpx
+from livekit.agents import (
+    function_tool,
+    ToolError,
+    RunContext
+)
+
 #defining logger to track metrics for performance eval
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,49 @@ class Assistant(Agent):
             "If I ask for help, keep it brief under 3 sentences."
         )
         
+    @function_tool #below function becomes a tool that the llm can call
+    async def weather_lookup( #coroutine that can be awaited via scheduling task
+        self,
+        context: RunContext, #gives access to the user data, speech handle .etc
+        location: str #hints that help the llm to understand what is being asked (eg: city name/place)
+    ) -> dict:
+        
+        #getting coordinates
+        #asynchronous httpx client to get data concurrently
+        async with httpx.AsyncClient() as client:
+            geo_response = await client.get(
+                "https://www.geocoding-api.open-meteo.com/v1/search", #url
+                params = {'name': location, 'count': 1} #storage variables
+            ) 
+            geo_data = geo_response.json() #storing data in a json file.
+            
+            #error handling: in case we dont get the location right:
+            if not geo_data.get("results"):
+                raise ToolError("COULD NOT FIND LOCATION.")
+            
+            lat = geo_data["results"][0]["latitude"]
+            lon = geo_data["results"][0]["longitude"]
+            place_name = geo_data["results"][0]["name"]
+            
+            #now getting the weather conditions from the location.
+            weather_response = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": "temperature_2m,weather_code",
+                    "temperature_unit": "celsius"
+                }
+            )
+            weather = weather_response.json() #storing data
+            
+            #returning a dict for the LLM: (best practice)
+            return {
+                "location": place_name,
+                "temperature_f": weather["current"]["temperature_2m"],
+                "conditions": weather["current"]["weather_code"]
+            }
+            
 #handles dispatching the sessions
 server = AgentServer()
 
@@ -123,6 +174,7 @@ async def entrypoint(ctx: JobContext):
                 noise_cancellation=noise_cancellation.BVC(),  # Background voice cancellation
             ),
         ),
+        record=False #if we need to not store transcropts and logs for a particular session.
     )
 
 def main():
