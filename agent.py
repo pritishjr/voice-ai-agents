@@ -26,6 +26,7 @@ from livekit.agents import (
     ToolError,
     RunContext
 )
+from livekit.agents import mcp
 
 #defining logger to track metrics for performance eval
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class Assistant(Agent):
             #instructions = "You are a helpful voice agent."
             instructions = "You are a rockstar who is goofy and non-chalant voice AI for emotional support."
             "If I ask for help, keep it brief under 3 sentences."
+            "You can also answer about the weather when asked."
         )
         
     @function_tool #below function becomes a tool that the llm can call
@@ -59,7 +61,8 @@ class Assistant(Agent):
             
             #error handling: in case we dont get the location right:
             if not geo_data.get("results"):
-                raise ToolError("COULD NOT FIND LOCATION.")
+                raise ToolError("COULD NOT FIND LOCATION.") 
+            #important to use ToolError here.
             
             lat = geo_data["results"][0]["latitude"]
             lon = geo_data["results"][0]["longitude"]
@@ -83,7 +86,41 @@ class Assistant(Agent):
                 "temperature_f": weather["current"]["temperature_2m"],
                 "conditions": weather["current"]["weather_code"]
             }
+    
+    #handling lojng-running tasks: lets say some functions take a long time. in that case, we need to inform the user. 
+    @function_tool
+    async def search_repository(
+        self,
+        context: RunContext,
+        query: str
+    ) -> str:
+        
+        #giving the user feedback that we are doing something.
+        await context.session.say("This might take a while:")
+        
+        #assume an expensive function: expensive_function()
+        '''
+        results = await expensive_function(query)
+        return results
+        '''
+        
+        pass
             
+    #we can also add a tool that disallows anny interruptions from the user:
+    @function_tool
+    async def rewrite_text(
+        self,
+        context: RunContext,
+        query: str
+    ) -> str:
+        
+        #syntax to disallow any interruptions while this tool is being executed.
+        context.disallow_interruptions()
+        
+        #results = await write_text()
+        #return results
+        
+        pass
 #handles dispatching the sessions
 server = AgentServer()
 
@@ -131,7 +168,10 @@ async def entrypoint(ctx: JobContext):
         ),
         vad = vad,
         turn_detection = MultilingualModel(),
-        preemptive_generation= True #enables the llm to think while the user is speaking.
+        preemptive_generation= True, #enables the llm to think while the user is speaking.
+        mcp_servers=[
+            mcp.MCPServerHTTP("https://docs.livekit.io/mcp") #connecting to an MCP server (here livekit docs)
+        ]
     )
     
     '''
