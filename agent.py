@@ -26,12 +26,20 @@ from livekit.agents import (
     ToolError,
     RunContext
 )
-from livekit.agents import mcp
+from livekit.agents import mcp 
+
+#collecting consent and escalating to human agents:
+from livekit.agents import AgentTask
 
 #defining logger to track metrics for performance eval
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+
+#__________________________________
+
+
 
 #handles the behaviour of the agent
 class Assistant(Agent):
@@ -121,6 +129,93 @@ class Assistant(Agent):
         #return results
         
         pass
+    
+    
+#entire class for collecting consent? since this is a conversational "behaviour" that it must show. therefore it must belong to the AgentTask method. it is different from the function_tool decorator method which only makes certain functions to the LLM as tools.
+class ConsentApproval(AgentTask[bool]): #must return a bool value at the end of the conversation to the main agent
+    
+    def __init__(self, chat_ctx) -> None:
+        super().__init__( #here we define the personality/qualities spefically for this behaviour.
+            instructions="""
+                Be very sharp-spoken yet gentle and polite. Use professional mannerisms. I personally recommend you use a Victorian-British English tone.
+            """,
+            chat_ctx=chat_ctx #chat context: acts as a memory bank (holds the running transcripts) between the agents. so that the manager agent knows the semantic context of the turns/conversations.
+        )
+        
+    async def authenticate_on_entry(self) -> None:
+        ask = self.session.generate_reply( #task scheduled
+            instructions="""
+                Ask the user to state his name for suthentication. Seek permissions for recording the conversation for quality purposes. Before that, briefly introduce yourself.
+            """
+        )
+        result = await ask #executes the task concurrently.
+        
+    #we can also add a behaviour-specific tools. (points to the importance of this architecture)
+    #the most important is either confirming whether the consesnt is approved or not.
+    @function_tool
+    async def consent_yes(self) -> None: #in case of YES
+        self.complete(True) 
+        
+    @function_tool
+    async def consent_no(self) -> None: #in case of NO
+        self.complete(False)
+    
+#creating an agent manager on this:
+class ManagerAgent(Agent):
+    def __init__(self) -> None:
+        super().__init__(
+            instructions="""
+            You are a customer service manager. You handle escalated issues 
+            that frontline agents couldn't resolve. Be empathetic and 
+            solution-focused. You have authority to offer refunds, credits,
+            or other accommodations.
+            """,
+            chat_ctx=self.chat_ctx,
+            tts="cartesia/sonic-3:6f84f4b8-58a2-430c-8c79-688dad597532" #we can use a different voice/personality
+        )
+    
+    async def initialization(self) -> None:
+        await self.session.generate_reply(
+        instructions="""
+            Introduca yourself as the manager of all the agents. Try to resolve the escalated issue. Ask how you can help with their concern.
+        """
+        )
+    
+    
+#creating multiple speciallized agents:
+#we can implement the consent approval architecture here
+class CustomerCareAgent(Agent):
+    def __init__(self) -> None:
+        super().__init__(
+            instructions="""
+                You are a cusotmer-care agent.
+                Use the escalation_feedback tool when you feel the conversation is escalating.
+            """,
+        ) 
+    
+    #implementing the consent approval using the local class object
+    async def authenticate_on_entry(self, chat_ctx) -> None:
+        consent = await ConsentApproval(chat_ctx) #using our Consent AgentTask 
+
+        if consent:
+            await self.session.generate_reply(
+                instructions="Thank them and let know they are approved."
+             )
+        else:
+            await self.session.generate_reply(
+                instructions="Reject them politely."
+            ) 
+    
+    #adding an escalation tool: transfers the call to the manager agent
+    @function_tool
+    async def escalation_feedback(self, context: RunContext) -> ManagerAgent:
+        #the session hands off the control to the ManagerAgent.
+        #tool docstring:
+        """Transfer the customer to a manager when requested or when you cannot resolve their issue."""
+        #using the chat context for the 
+        return ManagerAgent(self.chat_ctx),"Transferring you to a manager now."
+
+
 #handles dispatching the sessions
 server = AgentServer()
 
