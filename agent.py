@@ -31,6 +31,13 @@ from livekit.agents import mcp
 #collecting consent and escalating to human agents:
 from livekit.agents import AgentTask
 
+#WORKFLOWS:
+from livekit.agents.beta.workflows import TaskGroup
+from dataclasses import dataclass
+
+#for human handoff
+from livekit.agents import get_job_context
+
 #defining logger to track metrics for performance eval
 logger = logging.getLogger(__name__)
 
@@ -142,7 +149,7 @@ class ConsentApproval(AgentTask[bool]): #must return a bool value at the end of 
             chat_ctx=chat_ctx #chat context: acts as a memory bank (holds the running transcripts) between the agents. so that the manager agent knows the semantic context of the turns/conversations.
         )
         
-    async def authenticate_on_entry(self) -> None:
+    async def on_entry(self) -> None:
         ask = self.session.generate_reply( #task scheduled
             instructions="""
                 Ask the user to state his name for suthentication. Seek permissions for recording the conversation for quality purposes. Before that, briefly introduce yourself.
@@ -174,7 +181,7 @@ class ManagerAgent(Agent):
             tts="cartesia/sonic-3:6f84f4b8-58a2-430c-8c79-688dad597532" #we can use a different voice/personality
         )
     
-    async def initialization(self) -> None:
+    async def on_entry(self) -> None:
         await self.session.generate_reply(
         instructions="""
             Introduca yourself as the manager of all the agents. Try to resolve the escalated issue. Ask how you can help with their concern.
@@ -194,7 +201,7 @@ class CustomerCareAgent(Agent):
         ) 
     
     #implementing the consent approval using the local class object
-    async def authenticate_on_entry(self, chat_ctx) -> None:
+    async def on_entry(self, chat_ctx) -> None:
         consent = await ConsentApproval(chat_ctx) #using our Consent AgentTask 
 
         if consent:
@@ -214,6 +221,105 @@ class CustomerCareAgent(Agent):
         """Transfer the customer to a manager when requested or when you cannot resolve their issue."""
         #using the chat context for the 
         return ManagerAgent(self.chat_ctx),"Transferring you to a manager now."
+
+
+######-------- Multi-step Agent WORKFLOWS using Task Groups: --------#######
+
+#task to get the user's email address.
+#we are basically saying that the email_result must be a data object/container with a str attribute which contains the address.
+@dataclass
+class EmailResult:
+    email_address: str
+
+#task to get the user's shipping address
+@dataclass
+class AddressRResults:
+    address: str
+    
+#only job of this "task-agent" is to intake email.
+#wont move further until it returns "self.complete" to finish the agent-task
+class GetEmailAddress(AgentTask[EmailResult]):
+    def __init__(self) -> None:
+        super().__init__(
+            instructions="""
+                Collect the user's email address.
+                Use the getting_email function to accept the email address input of the user.
+            """
+        )
+
+    @function_tool
+    async def getting_email(self, context: RunContext, email:str) -> None:
+        #tool docstring:
+        """Record the user's email address."""
+        
+        self.complete(EmailResult(email_address=email))
+
+#task-agent: to accept the address/location of the user.
+class GetShippingAddress(AgentTask[AddressRResults]):
+    def __init__(self) -> None:
+        super().__init__(
+            instructions="""
+                Get the shipping address from the user.
+            """
+        )
+
+    @function_tool
+    async def record_email(self, context: RunContext, address: str) -> None:
+        #tool docstring:
+        """Record the user's shipping address."""
+        
+        self.complete(AddressRResults(address=address))
+        
+#finally the main agent that handles these task groups: using a WORKFLOW
+class CheckOutAgent(Agent):
+    
+    async def on_entry(self) -> None:
+        
+        #a taskgroup class object allows an agent to orchestrate a sequence(!) of  multiple-agent tasks. also allows regression to the previous tasks on request.
+        task_group = TaskGroup()
+        
+        #initializing the task group object:
+        task_group.add( #task1
+            lambda: GetEmailAddress(), #wraps with lambda to allow regression
+            id = "email",
+            description="Collecting the user's email id/address."
+        )
+        task_group.add( #task2
+            lambda: GetShippingAddress(),
+            id="address",
+            description="Collecting the user's shipping address."
+        )
+        #sequencially and concurrently running the tasks.
+        results = await task_group
+        
+        email_add = results.task_results["email"].email_address
+        shipping_add = results.task_results["address"].address
+        
+        #awaiting to execute the 
+        await self.session.generate_reply(
+            instructions=f"Confirm to the user that the order will be sent to {email_add} at the address {shipping_add}"
+        )
+        
+# HUMAN HANDOFF (when in need):
+@function_tool
+async def human_handoff(self, context: RunContext) -> None:
+    #tool docstring:
+    """Transfer the call to a human agent."""
+    
+    context.disallow_interruptions() 
+    #no interruptions while you transfer the call.
+    
+    await context.session.say(
+        "Transfering you to a human agent. Please wait for a moment."
+    )
+
+    room = get_job_context().room
+    await room.local_participant.publish_sip_participant(
+        sip_trunk_id="your-trunk-id", #example
+        dial_to="sip:support@your-pbx.com", #example
+    )
+
+######------#####-------######-------######-------#####-------########
 
 
 #handles dispatching the sessions
