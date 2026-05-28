@@ -1,5 +1,8 @@
 '''
 This is from the LiveKit tutorials on the basics of building voice ai agents.
+
+run in terminal:
+
 '''
 
 import logging
@@ -144,7 +147,7 @@ class ConsentApproval(AgentTask[bool]): #must return a bool value at the end of 
     def __init__(self, chat_ctx) -> None:
         super().__init__( #here we define the personality/qualities spefically for this behaviour.
             instructions="""
-                Be very sharp-spoken yet gentle and polite. Use professional mannerisms. I personally recommend you use a Victorian-British English tone.
+                Be very sharp-spoken yet gentle and polite. Use professional mannerisms. I personally recommend you use a Victorian-British English.
             """,
             chat_ctx=chat_ctx #chat context: acts as a memory bank (holds the running transcripts) between the agents. so that the manager agent knows the semantic context of the turns/conversations.
         )
@@ -152,13 +155,13 @@ class ConsentApproval(AgentTask[bool]): #must return a bool value at the end of 
     async def on_entry(self) -> None:
         ask = self.session.generate_reply( #task scheduled
             instructions="""
-                Ask the user to state his name for suthentication. Seek permissions for recording the conversation for quality purposes. Before that, briefly introduce yourself.
+                Ask the user to state his name for authentication. Seek permissions for recording the conversation for quality purposes. Before that, briefly introduce yourself.
             """
         )
         result = await ask #executes the task concurrently.
         
     #we can also add a behaviour-specific tools. (points to the importance of this architecture)
-    #the most important is either confirming whether the consesnt is approved or not.
+    #the most important part is confirming whether the consent is approved or not.
     @function_tool
     async def consent_yes(self) -> None: #in case of YES
         self.complete(True) 
@@ -219,8 +222,13 @@ class CustomerCareAgent(Agent):
         #the session hands off the control to the ManagerAgent.
         #tool docstring:
         """Transfer the customer to a manager when requested or when you cannot resolve their issue."""
-        #using the chat context for the 
-        return ManagerAgent(self.chat_ctx),"Transferring you to a manager now."
+        
+        await context.session.say(
+            "Transferring you to the agent manager to take of the situation more easily. Apologies for the inconvenience, please stay on the line."
+        )
+        
+        #preserving chat context for the manager agent.
+        return ManagerAgent(self.chat_ctx)
 
 
 ######-------- Multi-step Agent WORKFLOWS using Task Groups: --------#######
@@ -383,7 +391,7 @@ async def entrypoint(ctx: JobContext):
     #aggregating data across all turns(over all responses):
     usage_collector = metrics.UsageCollector()
     #calculate metrics at end of utterance timing: whenever the turn-detection gets activated - called EOU
-    last_eou_metric = metrics.EOUMetrics() | None = None
+    last_eou_metric: metrics.EOUMetrics | None = None
     
     #fires after each component finishes processing:
     @session.on("metrics_collected") #collecting the aggregated metrics
