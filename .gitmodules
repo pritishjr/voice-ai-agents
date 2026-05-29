@@ -1,0 +1,3 @@
+[submodule "first_livekit_agent"]
+	path = first_livekit_agent
+	url = https://github.com/pritishjr/first_livekit_agent.git
